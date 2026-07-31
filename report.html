@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fund report — 13Forage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div>
+      <div class="brand"><span class="num">13</span>Forage</div>
+      <div class="tagline">Foraging public filings for private signal</div>
+    </div>
+    <nav>
+      <a href="index.html">Coverage</a>
+      <a href="about.html">Method</a>
+      <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" rel="noopener">EDGAR ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap" id="report">
+  <p class="mono" style="padding:60px 0;color:var(--ink-soft)">Loading report…</p>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    13FORAGE is an independent research aggregator. Not investment advice.
+    Private-company exposure is inferred from public reporting and may be stale.
+    Filing data: <a href="https://www.sec.gov/edgar" target="_blank" rel="noopener">SEC EDGAR</a>.
+  </div>
+</footer>
+
+<script src="data/funds.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(async function () {
+  var root = document.getElementById("report");
+  var slug = new URLSearchParams(location.search).get("fund");
+  var fund = FUNDS.find(function (f) { return f.slug === slug; });
+
+  if (!fund) {
+    root.innerHTML =
+      '<div class="report-head"><h1>Report not found</h1>' +
+      '<p class="sub">No fund matches “' + esc(slug || "") + '”.</p></div>' +
+      '<a class="back" href="index.html">← Back to coverage</a>';
+    return;
+  }
+
+  document.title = fund.name + " — 13Forage";
+
+  var peCards = (fund.privateExposure || []).map(function (p) {
+    return (
+      '<div class="pe-card">' +
+        '<div class="co">' + esc(p.company) +
+          (p.basis ? '<span class="basis">' + esc(p.basis) + '</span>' : '') +
+        '</div>' +
+        '<div class="vehicle">' + esc(p.vehicle || "") + '</div>' +
+        (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') +
+      '</div>'
+    );
+  }).join("");
+  if (!peCards) {
+    peCards = '<p class="mono" style="color:var(--ink-soft)">No private-company ' +
+              'exposure recorded in the curated dataset.</p>';
+  }
+
+  var tags = (fund.tags || []).map(function (t) {
+    return '<span class="tag">' + esc(t) + '</span>';
+  }).join("");
+
+  root.innerHTML =
+    '<a class="back" href="index.html">← Coverage</a>' +
+    '<div class="report-head">' +
+      '<div class="kicker">Fund research note</div>' +
+      '<h1>' + esc(fund.name) + '</h1>' +
+      '<div class="sub">' + esc(fund.manager || "") +
+        ' · CIK ' + esc(fund.cik) + '</div>' +
+      '<div style="margin-top:12px">' + tags + '</div>' +
+    '</div>' +
+
+    '<div class="grid-2">' +
+      '<div>' +
+        '<div class="eyebrow"><span>Thesis</span></div>' +
+        '<div class="prose"><p>' + esc(fund.thesis || "") + '</p></div>' +
+
+        '<div class="eyebrow"><span>Reported private-company exposure</span></div>' +
+        peCards +
+      '</div>' +
+
+      '<aside>' +
+        '<div class="panel">' +
+          '<h3>Filing snapshot</h3>' +
+          '<div class="datum"><span class="k">CIK</span>' +
+            '<span class="v">' + esc(fund.cik) + '</span></div>' +
+          '<div class="datum"><span class="k">Latest 13F-HR</span>' +
+            '<span class="v" id="latest">…</span></div>' +
+          '<div class="datum"><span class="k">Private names</span>' +
+            '<span class="v">' + (fund.privateExposure || []).length + '</span></div>' +
+          '<div class="datum"><span class="k">AUM note</span>' +
+            '<span class="v" style="max-width:14ch">' + esc(fund.aumNote || "—") + '</span></div>' +
+        '</div>' +
+        '<div class="panel">' +
+          '<h3>Primary sources</h3>' +
+          '<div class="prose" style="font-size:13px">' +
+            '<p style="margin-bottom:8px"><a href="' + esc(edgarFilingsLink(fund.cik)) +
+              '" target="_blank" rel="noopener">EDGAR 13F-HR history ↗</a></p>' +
+            '<p style="margin:0"><a href="https://efts.sec.gov/LATEST/search-index?q=13F-HR&forms=13F-HR&ciks=' +
+              esc(padCik(fund.cik)) +
+              '" target="_blank" rel="noopener">Full-text search ↗</a></p>' +
+          '</div>' +
+        '</div>' +
+        '<div class="disclosure" style="margin-top:18px">' +
+          '<b>Scope note.</b> Private stakes shown here are inferred from public ' +
+          'reporting on listed vehicles — not disclosed in this fund\'s 13F. ' +
+          'Verify before relying on any figure.' +
+        '</div>' +
+      '</aside>' +
+    '</div>';
+
+  // Live-fetch latest 13F date.
+  var latestEl = document.getElementById("latest");
+  var latest = await fetchLatest13F(fund.cik);
+  if (latest && latest.date) {
+    latestEl.innerHTML = '<a href="' + esc(edgarFilingsLink(fund.cik)) +
+      '" target="_blank" rel="noopener">' + esc(latest.date) + ' ↗</a>';
+  } else {
+    latestEl.innerHTML = '<a href="' + esc(edgarFilingsLink(fund.cik)) +
+      '" target="_blank" rel="noopener" style="color:var(--ink-soft)">EDGAR ↗</a>';
+  }
+})();
+</script>
+</body>
+</html>

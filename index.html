@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>13Forage — private-company exposure in public fund filings</title>
+<meta name="description" content="High-level equity research on funds carrying exposure to private companies like Anthropic, Anduril, and OpenAI — reconstructed from public filings.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div>
+      <div class="brand"><span class="num">13</span>Forage</div>
+      <div class="tagline">Foraging public filings for private signal</div>
+    </div>
+    <nav>
+      <a href="index.html">Coverage</a>
+      <a href="about.html">Method</a>
+      <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" rel="noopener">EDGAR ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <h1>Which public funds quietly hold <em>private</em> companies?</h1>
+    <p class="lede">
+      13Forage assembles high-level equity research on institutional managers
+      with reported exposure to late-stage private companies — Anthropic,
+      Anduril, OpenAI, SpaceX and their peers — by pairing curated analysis
+      with live SEC filing data.
+    </p>
+  </section>
+
+  <div class="disclosure">
+    <b>Read this first.</b> A 13F filing discloses only 13(f) securities —
+    US-listed equities, ADRs, and some options. A fund's <b>direct</b> stake in
+    a private company does <b>not</b> appear in its 13F. Everything tagged as
+    private exposure below is reconstructed from public reporting on listed
+    vehicles, trusts, and holding companies — not read off a holdings table.
+    Marked <span style="color:var(--flag)">reported</span> where unverified.
+  </div>
+
+  <div class="eyebrow">
+    <span>Coverage universe</span>
+    <span id="live-status" class="live"><span class="dot"></span>checking EDGAR…</span>
+  </div>
+
+  <table class="fund-table">
+    <thead>
+      <tr>
+        <th style="width:34%">Fund</th>
+        <th style="width:30%">Reported private exposure</th>
+        <th style="width:20%">Latest 13F-HR</th>
+        <th style="width:16%">Profile</th>
+      </tr>
+    </thead>
+    <tbody id="fund-rows">
+      <tr><td colspan="4" class="mono" style="color:var(--ink-soft)">Loading coverage…</td></tr>
+    </tbody>
+  </table>
+
+  <p class="mono" style="color:var(--ink-soft);font-size:12px;margin-top:20px">
+    Filing dates fetched live from SEC EDGAR full-text search. If EDGAR is
+    unreachable, curated analysis still renders — only the live date column is
+    affected.
+  </p>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    13FORAGE is an independent research aggregator. Not investment advice; no
+    recommendation to buy or sell any security. Private-company exposure is
+    inferred from public reporting and may be stale or incomplete. Filing data:
+    <a href="https://www.sec.gov/edgar" target="_blank" rel="noopener">SEC EDGAR</a>.
+    Verify all figures against primary sources.
+  </div>
+</footer>
+
+<script src="data/funds.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(async function () {
+  const tbody = document.getElementById("fund-rows");
+  const statusEl = document.getElementById("live-status");
+
+  // Render curated rows immediately (no waiting on network).
+  tbody.innerHTML = FUNDS.map(function (f) {
+    var badges = (f.privateExposure || []).map(function (p) {
+      return '<span class="pe-badge">' + esc(p.company) + '</span>';
+    }).join("");
+    if (!badges) badges = '<span class="mono" style="color:var(--ink-soft)">—</span>';
+    return (
+      '<tr>' +
+        '<td>' +
+          '<a href="report.html?fund=' + encodeURIComponent(f.slug) + '">' +
+            '<span class="fund-name">' + esc(f.name) + '</span></a>' +
+          '<div class="fund-mgr">' + esc(f.manager || "") + '</div>' +
+        '</td>' +
+        '<td class="exposure-cell">' + badges + '</td>' +
+        '<td class="mono" data-cik="' + esc(f.cik) + '">' +
+          '<span class="live"><span class="dot"></span>…</span></td>' +
+        '<td class="mono">' +
+          '<a href="report.html?fund=' + encodeURIComponent(f.slug) + '">report →</a>' +
+        '</td>' +
+      '</tr>'
+    );
+  }).join("");
+
+  // Live-enrich each row with latest 13F date from EDGAR (sequential to
+  // respect SEC's fair-access rate limits).
+  var ok = 0, tried = 0;
+  for (const f of FUNDS) {
+    tried++;
+    const cell = tbody.querySelector('td[data-cik="' + CSS.escape(String(f.cik)) + '"]');
+    const latest = await fetchLatest13F(f.cik);
+    if (latest && latest.date) {
+      ok++;
+      cell.innerHTML =
+        '<a href="' + esc(edgarFilingsLink(f.cik)) + '" target="_blank" rel="noopener">' +
+        esc(latest.date) + ' ↗</a>';
+    } else {
+      cell.innerHTML =
+        '<a href="' + esc(edgarFilingsLink(f.cik)) + '" target="_blank" rel="noopener" ' +
+        'style="color:var(--ink-soft)">view on EDGAR ↗</a>';
+    }
+  }
+
+  if (ok === tried && tried > 0) setLive(statusEl, "ok", "EDGAR live · " + ok + "/" + tried);
+  else if (ok > 0)              setLive(statusEl, "ok", "EDGAR partial · " + ok + "/" + tried);
+  else                          setLive(statusEl, "err", "EDGAR unreachable · curated data shown");
+})();
+</script>
+</body>
+</html>
