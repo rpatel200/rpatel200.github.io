@@ -17,11 +17,16 @@
       <div class="brand"><span class="num">13</span>Forage</div>
       <div class="tagline">Foraging public filings for private signal</div>
     </div>
-    <nav>
-      <a href="index.html">Coverage</a>
-      <a href="about.html">Method</a>
-      <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" rel="noopener">EDGAR ↗</a>
-    </nav>
+    <div class="head-right">
+      <nav>
+        <a href="index.html">Coverage</a>
+        <a href="about.html">Method</a>
+        <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" rel="noopener">EDGAR ↗</a>
+      </nav>
+      <span class="live-indicator stale" title="Live data appears on the coverage and report pages">
+        <span class="rec"></span><span>live</span>
+      </span>
+    </div>
   </div>
 </header>
 
@@ -52,13 +57,24 @@
     of those relationships, drawn from public reporting and marked by how well
     each claim is substantiated.</p>
 
-    <div class="eyebrow"><span>The live layer</span></div>
-    <p>Each fund's latest 13F-HR filing date and links are pulled in real time
-    from SEC EDGAR's full-text search endpoint, directly in your browser, with
-    no server in between. This keeps filing metadata current. The structured
-    holdings tables themselves are not fetched live, because the SEC endpoints
-    that serve them don't permit direct browser access — that analysis stays in
-    the curated dataset.</p>
+    <div class="eyebrow"><span>The live layers</span></div>
+    <p>Two things update in real time, fetched directly in your browser with no
+    server in between. First, each fund's latest 13F-HR filing date and links
+    come from SEC EDGAR's full-text search endpoint, keeping filing metadata
+    current. Second, a one-month price chart and percentage change for each
+    fund's listed proxy come from Stooq. The structured 13F holdings tables are
+    not fetched live, because the SEC endpoints that serve them don't permit
+    direct browser access — that analysis stays in the curated dataset.</p>
+
+    <div class="eyebrow"><span>What the charts do and don't show</span></div>
+    <p>A chart tracks a listed <em>proxy</em>, never the fund's private stakes.
+    Some funds are themselves listed — Destiny Tech100 trades as DXYZ, the ARK
+    ETFs as ARKK and ARKVX — so their charts track the actual vehicle, though
+    even then a closed-end fund's price can swing to a large premium or discount
+    versus the value of what it holds. For private partnerships with no ticker,
+    there is simply nothing to chart, and the site says so rather than inventing
+    a number. A proxy's price movement reflects its whole portfolio and market
+    sentiment, not the performance of any single private position.</p>
 
     <div class="disclosure">
       <b>Not investment advice.</b> 13Forage is an independent aggregator for

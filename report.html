@@ -17,11 +17,16 @@
       <div class="brand"><span class="num">13</span>Forage</div>
       <div class="tagline">Foraging public filings for private signal</div>
     </div>
-    <nav>
-      <a href="index.html">Coverage</a>
-      <a href="about.html">Method</a>
-      <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" rel="noopener">EDGAR ↗</a>
-    </nav>
+    <div class="head-right">
+      <nav>
+        <a href="index.html">Coverage</a>
+        <a href="about.html">Method</a>
+        <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" rel="noopener">EDGAR ↗</a>
+      </nav>
+      <span id="live-indicator" class="live-indicator stale" title="Live data status">
+        <span class="rec"></span><span id="live-indicator-text">live</span>
+      </span>
+    </div>
   </div>
 </header>
 
@@ -50,6 +55,9 @@
       '<div class="report-head"><h1>Report not found</h1>' +
       '<p class="sub">No fund matches “' + esc(slug || "") + '”.</p></div>' +
       '<a class="back" href="index.html">← Back to coverage</a>';
+    var ind0 = document.getElementById("live-indicator");
+    if (ind0) { ind0.classList.add("stale");
+      document.getElementById("live-indicator-text").textContent = "offline"; }
     return;
   }
 
@@ -90,17 +98,42 @@
         '<div class="eyebrow"><span>Thesis</span></div>' +
         '<div class="prose"><p>' + esc(fund.thesis || "") + '</p></div>' +
 
+        (fund.performance
+          ? '<div class="eyebrow"><span>Performance &amp; positioning</span></div>' +
+            '<div class="prose"><p>' + esc(fund.performance) + '</p></div>'
+          : '') +
+
         '<div class="eyebrow"><span>Reported private-company exposure</span></div>' +
         peCards +
       '</div>' +
 
       '<aside>' +
+        // ---- live proxy chart (only when a proxy exists) ----
+        (fund.proxy
+          ? '<div class="panel chart-panel">' +
+              '<h3>Proxy · 1-month</h3>' +
+              '<div id="chart-slot">' +
+                '<div class="perf-loading">loading ' +
+                  esc(String(fund.proxy).split(".")[0].toUpperCase()) + '…</div>' +
+              '</div>' +
+              '<div class="proxy-note">' + esc(fund.proxyNote || "") + '</div>' +
+            '</div>'
+          : '<div class="panel">' +
+              '<h3>Proxy · 1-month</h3>' +
+              '<div class="perf-none">No listed proxy.</div>' +
+              (fund.proxyNote
+                ? '<div class="proxy-note">' + esc(fund.proxyNote) + '</div>' : '') +
+            '</div>') +
+
         '<div class="panel">' +
           '<h3>Filing snapshot</h3>' +
           '<div class="datum"><span class="k">CIK</span>' +
-            '<span class="v">' + esc(fund.cik) + '</span></div>' +
+            '<span class="v">' + esc(fund.cik || "—") + '</span></div>' +
           '<div class="datum"><span class="k">Latest 13F-HR</span>' +
-            '<span class="v" id="latest">…</span></div>' +
+            '<span class="v" id="latest">' +
+              (fund.cik ? "…" : "no 13F on file") + '</span></div>' +
+          '<div class="datum"><span class="k">Founded</span>' +
+            '<span class="v">' + esc(fund.founded || "—") + '</span></div>' +
           '<div class="datum"><span class="k">Private names</span>' +
             '<span class="v">' + (fund.privateExposure || []).length + '</span></div>' +
           '<div class="datum"><span class="k">AUM note</span>' +
@@ -109,30 +142,74 @@
         '<div class="panel">' +
           '<h3>Primary sources</h3>' +
           '<div class="prose" style="font-size:13px">' +
-            '<p style="margin-bottom:8px"><a href="' + esc(edgarFilingsLink(fund.cik)) +
-              '" target="_blank" rel="noopener">EDGAR 13F-HR history ↗</a></p>' +
-            '<p style="margin:0"><a href="https://efts.sec.gov/LATEST/search-index?q=13F-HR&forms=13F-HR&ciks=' +
-              esc(padCik(fund.cik)) +
-              '" target="_blank" rel="noopener">Full-text search ↗</a></p>' +
+            (fund.cik
+              ? '<p style="margin-bottom:8px"><a href="' + esc(edgarFilingsLink(fund.cik)) +
+                  '" target="_blank" rel="noopener">EDGAR 13F-HR history ↗</a></p>' +
+                '<p style="margin:0"><a href="https://efts.sec.gov/LATEST/search-index?q=13F-HR&forms=13F-HR&ciks=' +
+                  esc(padCik(fund.cik)) +
+                  '" target="_blank" rel="noopener">Full-text search ↗</a></p>'
+              : '<p style="margin:0;color:var(--ink-soft)">No resolved 13F filer ' +
+                'on record. Search ' +
+                '<a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" ' +
+                'target="_blank" rel="noopener">EDGAR ↗</a> to verify.</p>') +
           '</div>' +
         '</div>' +
         '<div class="disclosure" style="margin-top:18px">' +
           '<b>Scope note.</b> Private stakes shown here are inferred from public ' +
-          'reporting on listed vehicles — not disclosed in this fund\'s 13F. ' +
-          'Verify before relying on any figure.' +
+          'reporting — not disclosed in this fund\'s 13F. Any chart tracks the ' +
+          'listed proxy, not the fund or its private stakes. Verify before ' +
+          'relying on any figure.' +
         '</div>' +
       '</aside>' +
     '</div>';
 
-  // Live-fetch latest 13F date.
-  var latestEl = document.getElementById("latest");
-  var latest = await fetchLatest13F(fund.cik);
-  if (latest && latest.date) {
-    latestEl.innerHTML = '<a href="' + esc(edgarFilingsLink(fund.cik)) +
-      '" target="_blank" rel="noopener">' + esc(latest.date) + ' ↗</a>';
+  var indicator = document.getElementById("live-indicator");
+  var indicatorText = document.getElementById("live-indicator-text");
+  var edgarLive = false, chartLive = false;
+
+  // ---- Live layer 1: latest 13F date (only if we have a CIK) ----
+  if (fund.cik) {
+    var latestEl = document.getElementById("latest");
+    var latest = await fetchLatest13F(fund.cik);
+    if (latest && latest.date) {
+      edgarLive = true;
+      latestEl.innerHTML = '<a href="' + esc(edgarFilingsLink(fund.cik)) +
+        '" target="_blank" rel="noopener">' + esc(latest.date) + ' ↗</a>';
+    } else {
+      latestEl.innerHTML = '<a href="' + esc(edgarFilingsLink(fund.cik)) +
+        '" target="_blank" rel="noopener" style="color:var(--ink-soft)">EDGAR ↗</a>';
+    }
+  }
+
+  // ---- Live layer 2: Stooq proxy chart (only if a proxy exists) ----
+  if (fund.proxy) {
+    var slot = document.getElementById("chart-slot");
+    var rows = await fetchStooqDaily(fund.proxy);
+    var win = monthWindow(rows, 22);
+    if (win) {
+      chartLive = true;
+      var dir = win.up ? "up" : "down";
+      var tickerLabel = String(fund.proxy).split(".")[0].toUpperCase();
+      slot.innerHTML =
+        '<div class="chart-head">' +
+          '<span class="big-pct ' + dir + '">' + fmtPct(win.pct) + '</span>' +
+          '<span class="prox">' + esc(tickerLabel) + ' · ~1mo</span>' +
+        '</div>' +
+        sparklineSVG(win, 260, 64);
+    } else {
+      slot.innerHTML = '<div class="perf-none">' +
+        esc(String(fund.proxy).split(".")[0].toUpperCase()) +
+        ' · chart unavailable right now</div>';
+    }
+  }
+
+  // ---- Drive masthead LIVE indicator ----
+  if (edgarLive || chartLive) {
+    indicator.classList.remove("stale");
+    indicatorText.textContent = "live";
   } else {
-    latestEl.innerHTML = '<a href="' + esc(edgarFilingsLink(fund.cik)) +
-      '" target="_blank" rel="noopener" style="color:var(--ink-soft)">EDGAR ↗</a>';
+    indicator.classList.add("stale");
+    indicatorText.textContent = "offline";
   }
 })();
 </script>

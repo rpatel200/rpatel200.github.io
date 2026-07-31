@@ -18,11 +18,16 @@
       <div class="brand"><span class="num">13</span>Forage</div>
       <div class="tagline">Foraging public filings for private signal</div>
     </div>
-    <nav>
-      <a href="index.html">Coverage</a>
-      <a href="about.html">Method</a>
-      <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" rel="noopener">EDGAR ↗</a>
-    </nav>
+    <div class="head-right">
+      <nav>
+        <a href="index.html">Coverage</a>
+        <a href="about.html">Method</a>
+        <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" rel="noopener">EDGAR ↗</a>
+      </nav>
+      <span id="live-indicator" class="live-indicator stale" title="Live data status">
+        <span class="rec"></span><span id="live-indicator-text">live</span>
+      </span>
+    </div>
   </div>
 </header>
 
@@ -55,21 +60,23 @@
   <table class="fund-table">
     <thead>
       <tr>
-        <th style="width:34%">Fund</th>
-        <th style="width:30%">Reported private exposure</th>
-        <th style="width:20%">Latest 13F-HR</th>
-        <th style="width:16%">Profile</th>
+        <th style="width:26%">Fund</th>
+        <th style="width:24%">Reported private exposure</th>
+        <th style="width:24%">Proxy · 1-month</th>
+        <th style="width:16%">Latest 13F-HR</th>
+        <th style="width:10%">Profile</th>
       </tr>
     </thead>
     <tbody id="fund-rows">
-      <tr><td colspan="4" class="mono" style="color:var(--ink-soft)">Loading coverage…</td></tr>
+      <tr><td colspan="5" class="mono" style="color:var(--ink-soft)">Loading coverage…</td></tr>
     </tbody>
   </table>
 
   <p class="mono" style="color:var(--ink-soft);font-size:12px;margin-top:20px">
-    Filing dates fetched live from SEC EDGAR full-text search. If EDGAR is
-    unreachable, curated analysis still renders — only the live date column is
-    affected.
+    Filing dates fetched live from SEC EDGAR; 1-month charts fetched live from
+    Stooq for each fund's listed proxy. Charts track the proxy ticker, not the
+    fund itself — see each report for what the proxy represents. If a source is
+    unreachable, curated analysis still renders.
   </p>
 
 </main>
@@ -90,13 +97,25 @@
 (async function () {
   const tbody = document.getElementById("fund-rows");
   const statusEl = document.getElementById("live-status");
+  const indicator = document.getElementById("live-indicator");
+  const indicatorText = document.getElementById("live-indicator-text");
 
-  // Render curated rows immediately (no waiting on network).
-  tbody.innerHTML = FUNDS.map(function (f) {
+  // Render curated rows immediately (no waiting on network). Each row gets a
+  // stable index-based id so we can target its cells regardless of CIK.
+  tbody.innerHTML = FUNDS.map(function (f, i) {
     var badges = (f.privateExposure || []).map(function (p) {
       return '<span class="pe-badge">' + esc(p.company) + '</span>';
     }).join("");
     if (!badges) badges = '<span class="mono" style="color:var(--ink-soft)">—</span>';
+
+    var perfCell = f.proxy
+      ? '<span class="perf-loading">loading…</span>'
+      : '<span class="perf-none">no listed proxy</span>';
+
+    var filingCell = f.cik
+      ? '<span class="live"><span class="dot"></span>…</span>'
+      : '<span class="mono" style="color:var(--ink-soft)">no 13F on file</span>';
+
     return (
       '<tr>' +
         '<td>' +
@@ -105,8 +124,8 @@
           '<div class="fund-mgr">' + esc(f.manager || "") + '</div>' +
         '</td>' +
         '<td class="exposure-cell">' + badges + '</td>' +
-        '<td class="mono" data-cik="' + esc(f.cik) + '">' +
-          '<span class="live"><span class="dot"></span>…</span></td>' +
+        '<td id="perf-' + i + '">' + perfCell + '</td>' +
+        '<td class="mono" id="filing-' + i + '">' + filingCell + '</td>' +
         '<td class="mono">' +
           '<a href="report.html?fund=' + encodeURIComponent(f.slug) + '">report →</a>' +
         '</td>' +
@@ -114,15 +133,16 @@
     );
   }).join("");
 
-  // Live-enrich each row with latest 13F date from EDGAR (sequential to
-  // respect SEC's fair-access rate limits).
-  var ok = 0, tried = 0;
-  for (const f of FUNDS) {
-    tried++;
-    const cell = tbody.querySelector('td[data-cik="' + CSS.escape(String(f.cik)) + '"]');
-    const latest = await fetchLatest13F(f.cik);
+  // ---- Live layer 1: EDGAR latest 13F date (sequential; respects fair-access) ----
+  var edgarOk = 0, edgarTried = 0;
+  for (var i = 0; i < FUNDS.length; i++) {
+    var f = FUNDS[i];
+    if (!f.cik) continue;            // no CIK → leave the "no 13F on file" note
+    edgarTried++;
+    var cell = document.getElementById("filing-" + i);
+    var latest = await fetchLatest13F(f.cik);
     if (latest && latest.date) {
-      ok++;
+      edgarOk++;
       cell.innerHTML =
         '<a href="' + esc(edgarFilingsLink(f.cik)) + '" target="_blank" rel="noopener">' +
         esc(latest.date) + ' ↗</a>';
@@ -132,10 +152,49 @@
         'style="color:var(--ink-soft)">view on EDGAR ↗</a>';
     }
   }
+  if (edgarOk === edgarTried && edgarTried > 0) setLive(statusEl, "ok", "EDGAR live · " + edgarOk + "/" + edgarTried);
+  else if (edgarOk > 0)                         setLive(statusEl, "ok", "EDGAR partial · " + edgarOk + "/" + edgarTried);
+  else                                          setLive(statusEl, "err", "EDGAR unreachable · curated data shown");
 
-  if (ok === tried && tried > 0) setLive(statusEl, "ok", "EDGAR live · " + ok + "/" + tried);
-  else if (ok > 0)              setLive(statusEl, "ok", "EDGAR partial · " + ok + "/" + tried);
-  else                          setLive(statusEl, "err", "EDGAR unreachable · curated data shown");
+  // ---- Live layer 2: Stooq 1-month sparkline + % change for listed proxies ----
+  var pxOk = 0, pxTried = 0;
+  for (var j = 0; j < FUNDS.length; j++) {
+    var fund = FUNDS[j];
+    if (!fund.proxy) continue;
+    pxTried++;
+    var pcell = document.getElementById("perf-" + j);
+    var rows = await fetchStooqDaily(fund.proxy);
+    var win = monthWindow(rows, 22);
+    if (win) {
+      pxOk++;
+      var dir = win.up ? "up" : "down";
+      var tickerLabel = String(fund.proxy).split(".")[0].toUpperCase();
+      pcell.innerHTML =
+        '<div class="perf">' +
+          sparklineSVG(win, 96, 30) +
+          '<div>' +
+            '<div class="pct ' + dir + '">' + fmtPct(win.pct) + '</div>' +
+            '<div class="ticker">' + esc(tickerLabel) + '</div>' +
+          '</div>' +
+        '</div>';
+    } else {
+      var tk = String(fund.proxy).split(".")[0].toUpperCase();
+      pcell.innerHTML = '<span class="perf-none">' + esc(tk) + ' · chart unavailable</span>';
+    }
+  }
+
+  // ---- Drive the masthead LIVE indicator from combined status ----
+  var anyLive = (edgarOk > 0) || (pxOk > 0);
+  if (anyLive) {
+    indicator.classList.remove("stale");
+    indicatorText.textContent = "live";
+    indicator.title = "Live: EDGAR " + edgarOk + "/" + edgarTried +
+                      " · Stooq " + pxOk + "/" + pxTried;
+  } else {
+    indicator.classList.add("stale");
+    indicatorText.textContent = "offline";
+    indicator.title = "Live sources unreachable — showing curated data";
+  }
 })();
 </script>
 </body>
